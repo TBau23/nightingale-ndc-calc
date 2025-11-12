@@ -7,12 +7,13 @@ import { getFDACache } from './cache.js';
 import { NDCNotFoundError, NDCPackageSchema, DOSAGE_FORMS } from '$lib/types';
 import type { Result, NDCPackage, FDANDCResponse, DosageForm, NDCStatus } from '$lib/types';
 import { ok, err } from '$lib/types';
+import { env } from '$env/dynamic/private';
 
 /**
  * FDA NDC API base URL
  */
-const FDA_BASE_URL = process.env.FDA_NDC_API_URL || 'https://api.fda.gov/drug/ndc.json';
-const FDA_API_KEY = process.env.FDA_API_KEY || '';
+const FDA_BASE_URL = env.FDA_NDC_API_URL || 'https://api.fda.gov/drug/ndc.json';
+const FDA_API_KEY_VALUE = env.FDA_API_KEY || '';
 
 /**
  * Validate NDC format (supports various formats)
@@ -144,7 +145,7 @@ export async function searchNDCsByDrug(
 	try {
 		// Search by both generic and brand name
 		const searchQuery = `(generic_name:"${encodeURIComponent(drugName)}"+brand_name:"${encodeURIComponent(drugName)}")`;
-		const apiKey = FDA_API_KEY ? `&api_key=${FDA_API_KEY}` : '';
+		const apiKey = FDA_API_KEY_VALUE ? `&api_key=${FDA_API_KEY_VALUE}` : '';
 		const url = `${FDA_BASE_URL}?search=${searchQuery}&limit=${limit}${apiKey}`;
 
 		const data = await fetchJSON<FDANDCResponse>(url, {}, 'FDA NDC API');
@@ -242,7 +243,7 @@ export async function getNDCDetails(ndc: string): Promise<Result<NDCPackage, NDC
 	}
 
 	try {
-		const apiKey = FDA_API_KEY ? `&api_key=${FDA_API_KEY}` : '';
+		const apiKey = FDA_API_KEY_VALUE ? `&api_key=${FDA_API_KEY_VALUE}` : '';
 		const url = `${FDA_BASE_URL}?search=package_ndc:"${ndc}"${apiKey}`;
 
 		const data = await fetchJSON<FDANDCResponse>(url, {}, 'FDA NDC API');

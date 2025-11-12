@@ -7,11 +7,12 @@ import { getRxNormCache } from './cache.js';
 import { DrugNormalizationError, RxNormConceptSchema } from '$lib/types';
 import type { Result, RxNormConcept, RxNormResponse } from '$lib/types';
 import { ok, err } from '$lib/types';
+import { env } from '$env/dynamic/private';
 
 /**
  * RxNorm API base URL
  */
-const RXNORM_BASE_URL = process.env.RXNORM_API_URL || 'https://rxnav.nlm.nih.gov/REST';
+const RXNORM_BASE_URL = env.RXNORM_API_URL || 'https://rxnav.nlm.nih.gov/REST';
 
 /**
  * Normalize drug name to RxCUI

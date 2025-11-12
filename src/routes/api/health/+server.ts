@@ -3,6 +3,7 @@
  */
 
 import { json } from '@sveltejs/kit';
+import { env } from '$env/dynamic/private';
 
 /**
  * Health check endpoint
@@ -16,8 +17,8 @@ export async function GET() {
 		timestamp: new Date().toISOString(),
 		version: '1.0.0',
 		services: {
-			openai: process.env.OPENAI_API_KEY ? 'configured' : 'not_configured',
-			cache: process.env.ENABLE_API_CACHE === 'true' ? 'enabled' : 'disabled'
+			openai: env.OPENAI_API_KEY ? 'configured' : 'not_configured',
+			cache: env.ENABLE_API_CACHE === 'true' ? 'enabled' : 'disabled'
 		}
 	});
 }

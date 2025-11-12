@@ -2,12 +2,14 @@
  * Optional in-memory cache for API responses
  */
 
+import { env } from '$env/dynamic/private';
+
 /**
  * Cache configuration
  */
 const CACHE_CONFIG = {
-	enabled: process.env.ENABLE_API_CACHE === 'true',
-	ttl: parseInt(process.env.API_CACHE_TTL_MS || '900000'), // 15 minutes default
+	enabled: env.ENABLE_API_CACHE === 'true',
+	ttl: parseInt(env.API_CACHE_TTL_MS || '900000'), // 15 minutes default
 	maxSize: 1000
 } as const;
 

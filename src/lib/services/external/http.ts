@@ -3,13 +3,14 @@
  */
 
 import { ExternalAPIError } from '$lib/types';
+import { env } from '$env/dynamic/private';
 
 /**
  * HTTP configuration
  */
 const HTTP_CONFIG = {
-	timeout: parseInt(process.env.API_TIMEOUT_MS || '10000'),
-	maxRetries: parseInt(process.env.API_MAX_RETRIES || '3')
+	timeout: parseInt(env.API_TIMEOUT_MS || '10000'),
+	maxRetries: parseInt(env.API_MAX_RETRIES || '3')
 } as const;
 
 /**

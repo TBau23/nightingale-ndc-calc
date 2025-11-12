@@ -6,20 +6,21 @@ import OpenAI from 'openai';
 import { AIServiceError } from '$lib/types';
 import type { Result } from '$lib/types';
 import { ok, err } from '$lib/types';
+import { env } from '$env/dynamic/private';
 
 /**
  * AI configuration settings
  */
 const AI_CONFIG = {
-	model: process.env.OPENAI_MODEL || 'gpt-4o',
-	temperature: parseFloat(process.env.OPENAI_TEMPERATURE || '0.1'),
+	model: env.OPENAI_MODEL || 'gpt-4o',
+	temperature: parseFloat(env.OPENAI_TEMPERATURE || '0.1'),
 	maxTokens: {
-		sigParser: parseInt(process.env.OPENAI_MAX_TOKENS || '1500'),
+		sigParser: parseInt(env.OPENAI_MAX_TOKENS || '1500'),
 		ndcSelector: 1000,
 		errorAdvisor: 800
 	},
-	timeout: parseInt(process.env.OPENAI_TIMEOUT_MS || '30000'),
-	maxRetries: parseInt(process.env.OPENAI_MAX_RETRIES || '3')
+	timeout: parseInt(env.OPENAI_TIMEOUT_MS || '30000'),
+	maxRetries: parseInt(env.OPENAI_MAX_RETRIES || '3')
 } as const;
 
 /**
@@ -29,7 +30,7 @@ let openaiClient: OpenAI | null = null;
 
 function getClient(): OpenAI {
 	if (!openaiClient) {
-		const apiKey = process.env.OPENAI_API_KEY;
+		const apiKey = env.OPENAI_API_KEY;
 		if (!apiKey) {
 			throw new AIServiceError('OpenAI Client', 'OPENAI_API_KEY environment variable is not set');
 		}
