@@ -59,6 +59,41 @@ export function normalizeNDC(ndc: string): string {
 }
 
 /**
+ * Extract base drug name by removing strength/dosage information
+ * Examples:
+ *   "Lisinopril 10mg" → { baseName: "Lisinopril", strength: "10mg" }
+ *   "Metformin 500 mg" → { baseName: "Metformin", strength: "500 mg" }
+ *   "Insulin Glargine" → { baseName: "Insulin Glargine", strength: null }
+ *
+ * @param drugName - Drug name potentially containing strength
+ * @returns Object with base name and extracted strength (if any)
+ */
+export function extractBaseDrugName(drugName: string): {
+	baseName: string;
+	strength: string | null;
+} {
+	// Pattern to match common strength formats:
+	// - 10mg, 500mg, 1.5mg
+	// - 10 mg, 500 mg
+	// - 10mcg, 5mcg
+	// - 100ml, 50ml
+	// - 20units, 100units
+	const strengthPattern = /\s*(\d+(?:\.\d+)?)\s*(mg|mcg|g|ml|units?|iu)\s*$/i;
+
+	const match = drugName.match(strengthPattern);
+
+	if (match) {
+		// Remove the strength from the drug name
+		const baseName = drugName.replace(strengthPattern, '').trim();
+		const strength = match[0].trim();
+		return { baseName, strength };
+	}
+
+	// No strength found, return as-is
+	return { baseName: drugName.trim(), strength: null };
+}
+
+/**
  * Normalize dosage form to enum value
  *
  * @param form - Dosage form from FDA API
@@ -138,9 +173,16 @@ export async function searchNDCsByDrug(
 		return err(new DrugNotFoundError(''));
 	}
 
-	const normalizedName = drugName.trim().toLowerCase();
+	// Extract base drug name (strips strength like "10mg")
+	const { baseName, strength } = extractBaseDrugName(drugName);
+	const normalizedName = baseName.trim().toLowerCase();
 
-	// Check cache
+	console.log('[FDA NDC] Original drug name:', drugName);
+	if (strength) {
+		console.log('[FDA NDC] Extracted base name:', baseName, '| Strength:', strength);
+	}
+
+	// Check cache (use base name for cache key)
 	const cacheKey = `fda:drug:${normalizedName}:${limit}`;
 	const cached = getFDACache().get(cacheKey);
 	if (cached) {
@@ -148,13 +190,13 @@ export async function searchNDCsByDrug(
 	}
 
 	try {
-		// Search by both generic and brand name
-		const searchQuery = `(generic_name:"${drugName}" OR brand_name:"${drugName}")`;
+		// Search by both generic and brand name (use base name)
+		const searchQuery = `(generic_name:"${baseName}" OR brand_name:"${baseName}")`;
 		const encodedQuery = encodeURIComponent(searchQuery);
 		const apiKey = FDA_API_KEY_VALUE ? `&api_key=${FDA_API_KEY_VALUE}` : '';
 		const url = `${FDA_BASE_URL}?search=${encodedQuery}&limit=${limit}${apiKey}`;
 
-		console.log('[FDA NDC] Searching for drug:', drugName);
+		console.log('[FDA NDC] Searching FDA with base name:', baseName);
 		console.log('[FDA NDC] Query URL:', url);
 
 		const data = await fetchJSON<FDANDCResponse>(url, {}, 'FDA NDC API');

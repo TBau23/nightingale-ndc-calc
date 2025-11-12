@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ExternalLink } from 'lucide-svelte';
 	import type { SelectedPackage, MedicationUnit } from '$lib/types';
 
 	interface Props {
@@ -7,6 +8,11 @@
 	}
 
 	let { packages, unit }: Props = $props();
+
+	function getNDCVerificationUrl(ndc: string): string {
+		// Use ndclist.com for NDC verification
+		return `https://ndclist.com/ndc/${ndc}`;
+	}
 </script>
 
 <div class="overflow-x-auto">
@@ -18,6 +24,24 @@
 					class="py-3 pl-4 pr-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 sm:pl-6"
 				>
 					NDC
+				</th>
+				<th
+					scope="col"
+					class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500"
+				>
+					Drug Name
+				</th>
+				<th
+					scope="col"
+					class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500"
+				>
+					Strength
+				</th>
+				<th
+					scope="col"
+					class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500"
+				>
+					Form
 				</th>
 				<th
 					scope="col"
@@ -42,16 +66,48 @@
 		<tbody class="divide-y divide-gray-200 bg-white">
 			{#each packages as pkg}
 				<tr class="hover:bg-gray-50 transition-colors">
-					<td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-mono font-medium text-gray-900 sm:pl-6">
-						{pkg.package.ndc}
+					<!-- NDC (clickable link) -->
+					<td
+						class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-mono font-medium sm:pl-6"
+					>
+						<a
+							href={getNDCVerificationUrl(pkg.package.ndc)}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="text-primary-600 hover:text-primary-800 hover:underline inline-flex items-center gap-1"
+						>
+							{pkg.package.ndc}
+							<ExternalLink class="w-3 h-3" />
+						</a>
 					</td>
+
+					<!-- Drug Name -->
+					<td class="whitespace-nowrap px-3 py-4 text-sm text-gray-700">
+						{pkg.package.genericName || pkg.package.brandName || 'N/A'}
+					</td>
+
+					<!-- Strength (highlighted) -->
+					<td class="whitespace-nowrap px-3 py-4 text-sm font-semibold text-gray-900">
+						{pkg.package.strength || 'N/A'}
+					</td>
+
+					<!-- Dosage Form -->
+					<td class="whitespace-nowrap px-3 py-4 text-sm text-gray-700 capitalize">
+						{pkg.package.dosageForm ? pkg.package.dosageForm.toLowerCase() : 'N/A'}
+					</td>
+
+					<!-- Package Size -->
 					<td class="whitespace-nowrap px-3 py-4 text-sm text-gray-700">
 						{pkg.package.packageSize}
 						{unit}{pkg.package.packageSize > 1 ? 's' : ''}
 					</td>
+
+					<!-- Quantity -->
 					<td class="whitespace-nowrap px-3 py-4 text-sm text-gray-700">
 						{pkg.quantity}
 					</td>
+
+					<!-- Total Units -->
 					<td class="whitespace-nowrap px-3 py-4 text-sm font-medium text-gray-900">
 						{pkg.totalUnits}
 						{unit}{pkg.totalUnits > 1 ? 's' : ''}
