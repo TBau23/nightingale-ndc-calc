@@ -26,6 +26,19 @@ export class NDCNotFoundError extends NightingaleError {
 }
 
 /**
+ * Error when no NDC packages found for a drug name
+ */
+export class DrugNotFoundError extends NightingaleError {
+	constructor(public readonly drugName: string) {
+		super(
+			`No NDC packages found for drug: ${drugName}`,
+			'DRUG_NOT_FOUND',
+			404
+		);
+	}
+}
+
+/**
  * Error when NDC is inactive or discontinued
  */
 export class InactiveNDCError extends NightingaleError {

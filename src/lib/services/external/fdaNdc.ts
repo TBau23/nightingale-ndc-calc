@@ -4,7 +4,12 @@
 
 import { fetchJSON } from './http.js';
 import { getFDACache } from './cache.js';
-import { NDCNotFoundError, NDCPackageSchema, DOSAGE_FORMS } from '$lib/types';
+import {
+	NDCNotFoundError,
+	DrugNotFoundError,
+	NDCPackageSchema,
+	DOSAGE_FORMS
+} from '$lib/types';
 import type { Result, NDCPackage, FDANDCResponse, DosageForm, NDCStatus } from '$lib/types';
 import { ok, err } from '$lib/types';
 import { env } from '$env/dynamic/private';
@@ -127,10 +132,10 @@ function parsePackageSize(description: string): number {
 export async function searchNDCsByDrug(
 	drugName: string,
 	limit: number = 100
-): Promise<Result<NDCPackage[], NDCNotFoundError>> {
+): Promise<Result<NDCPackage[], DrugNotFoundError>> {
 	// Validate input
 	if (!drugName || drugName.trim().length === 0) {
-		return err(new NDCNotFoundError('Drug name cannot be empty'));
+		return err(new DrugNotFoundError(''));
 	}
 
 	const normalizedName = drugName.trim().toLowerCase();
@@ -144,15 +149,22 @@ export async function searchNDCsByDrug(
 
 	try {
 		// Search by both generic and brand name
-		const searchQuery = `(generic_name:"${encodeURIComponent(drugName)}"+brand_name:"${encodeURIComponent(drugName)}")`;
+		const searchQuery = `(generic_name:"${drugName}" OR brand_name:"${drugName}")`;
+		const encodedQuery = encodeURIComponent(searchQuery);
 		const apiKey = FDA_API_KEY_VALUE ? `&api_key=${FDA_API_KEY_VALUE}` : '';
-		const url = `${FDA_BASE_URL}?search=${searchQuery}&limit=${limit}${apiKey}`;
+		const url = `${FDA_BASE_URL}?search=${encodedQuery}&limit=${limit}${apiKey}`;
+
+		console.log('[FDA NDC] Searching for drug:', drugName);
+		console.log('[FDA NDC] Query URL:', url);
 
 		const data = await fetchJSON<FDANDCResponse>(url, {}, 'FDA NDC API');
 
 		if (!data.results || data.results.length === 0) {
-			return err(new NDCNotFoundError(drugName));
+			console.log('[FDA NDC] No results found for:', drugName);
+			return err(new DrugNotFoundError(drugName));
 		}
+
+		console.log('[FDA NDC] Found', data.results.length, 'results for:', drugName);
 
 		// Transform results to NDCPackage[]
 		const packages: NDCPackage[] = [];
@@ -201,7 +213,8 @@ export async function searchNDCsByDrug(
 		}
 
 		if (packages.length === 0) {
-			return err(new NDCNotFoundError(drugName));
+			console.log('[FDA NDC] No valid packages found after filtering for:', drugName);
+			return err(new DrugNotFoundError(drugName));
 		}
 
 		// Cache the results
@@ -209,7 +222,8 @@ export async function searchNDCsByDrug(
 
 		return ok(packages);
 	} catch (error: any) {
-		return err(new NDCNotFoundError(drugName));
+		console.error('[FDA NDC] Error searching for drug:', drugName, error);
+		return err(new DrugNotFoundError(drugName));
 	}
 }
 
@@ -243,14 +257,22 @@ export async function getNDCDetails(ndc: string): Promise<Result<NDCPackage, NDC
 	}
 
 	try {
+		const searchQuery = `package_ndc:"${ndc}"`;
+		const encodedQuery = encodeURIComponent(searchQuery);
 		const apiKey = FDA_API_KEY_VALUE ? `&api_key=${FDA_API_KEY_VALUE}` : '';
-		const url = `${FDA_BASE_URL}?search=package_ndc:"${ndc}"${apiKey}`;
+		const url = `${FDA_BASE_URL}?search=${encodedQuery}${apiKey}`;
+
+		console.log('[FDA NDC] Getting details for NDC:', ndc);
+		console.log('[FDA NDC] Query URL:', url);
 
 		const data = await fetchJSON<FDANDCResponse>(url, {}, 'FDA NDC API');
 
 		if (!data.results || data.results.length === 0) {
+			console.log('[FDA NDC] No results found for NDC:', ndc);
 			return err(new NDCNotFoundError(ndc));
 		}
+
+		console.log('[FDA NDC] Found details for NDC:', ndc);
 
 		const result = data.results[0];
 
