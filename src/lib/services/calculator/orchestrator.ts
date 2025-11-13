@@ -168,12 +168,13 @@ function normalizeDrugNameForMatch(name: string): string {
 const MULTI_INGREDIENT_PATTERN = /\b(and|with)\b|\/|,/i;
 
 /**
- * Normalize strength for comparison (handles "500mg" vs "500 mg" vs "500MG")
+ * Normalize strength for comparison (handles "500mg" vs "500 mg" vs "500MG" vs "500 MG/1")
  */
 function normalizeStrength(strength: string): string {
 	return strength
 		.toLowerCase()
 		.replace(/\s+/g, '') // Remove spaces
+		.replace(/\/\d+$/, '') // Remove "/1" or "/100" suffix (e.g., "500mg/1" → "500mg")
 		.replace(/(\d+(?:\.\d+)?)(mg|mcg|g|ml|units?|iu)/i, '$1$2'); // Normalize format
 }
 
