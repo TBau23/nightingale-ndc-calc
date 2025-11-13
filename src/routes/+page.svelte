@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Pill } from 'lucide-svelte';
-	import type { PrescriptionInput, CalculationResult } from '$lib/types';
+	import type { PrescriptionInput, CalculationResult, ErrorAdvice } from '$lib/types';
 	import PrescriptionForm from '$lib/components/PrescriptionForm.svelte';
 	import LiveSIGPreview from '$lib/components/LiveSIGPreview.svelte';
 	import QuickExamples from '$lib/components/QuickExamples.svelte';
@@ -19,7 +19,7 @@
 	let isLoading = $state<boolean>(false);
 	let currentStep = $state<number>(0);
 	let result = $state<CalculationResult | null>(null);
-	let error = $state<{ code: string; message: string; statusCode: number } | null>(null);
+	let error = $state<{ code: string; message: string; statusCode: number; advice?: ErrorAdvice } | null>(null);
 
 	// Handle form submission
 	async function handleSubmit(): Promise<void> {

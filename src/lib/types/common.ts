@@ -63,3 +63,17 @@ export interface APIResponse<T> {
 	/** ISO timestamp of the response */
 	timestamp: string;
 }
+
+/**
+ * AI-generated advice describing how to resolve an error
+ */
+export interface ErrorAdvice {
+	/** Plain-language explanation of what went wrong */
+	explanation: string;
+
+	/** Actionable next steps for the user */
+	suggestions: string[];
+
+	/** Optional alternate options or structured data */
+	alternatives?: unknown;
+}

@@ -2,7 +2,7 @@
  * Prompt templates and system messages for AI services
  */
 
-import type { NDCPackage, PrescriptionInput } from '$lib/types';
+import type { NDCPackage, PrescriptionInput, ParsedSIG } from '$lib/types';
 
 /**
  * System prompts for different AI services
@@ -17,6 +17,10 @@ Output a JSON object with the following structure:
   "dose": number (amount per administration),
   "unit": string (one of: tablet, capsule, mL, unit, mg, g, patch, spray, puff, drop, suppository, application),
   "frequency": object (see frequency patterns below),
+  "doseRange": {"min": number, "max": number} | undefined,
+  "doseSchedule": [
+    {"timing": string, "dose": number, "occurrencesPerDay": number}
+  ] | undefined,
   "duration": number | undefined (days, if specified),
   "route": string | undefined (oral, topical, subcutaneous, intramuscular, intravenous, rectal, ophthalmic, otic, nasal, transdermal, inhalation),
   "specialInstructions": string[] | undefined (e.g., ["with food", "at bedtime"]),
@@ -100,6 +104,10 @@ const SIG_EXAMPLES = [
 			dose: 10,
 			unit: 'unit',
 			frequency: { type: 'specific_times', times: ['before meals', 'at bedtime'] },
+			doseSchedule: [
+				{ timing: 'before meals', dose: 10, occurrencesPerDay: 3 },
+				{ timing: 'at bedtime', dose: 15, occurrencesPerDay: 1 }
+			],
 			route: 'subcutaneous',
 			specialInstructions: ['variable dosing: 10 before meals, 15 at bedtime'],
 			confidence: 0.9,
@@ -113,6 +121,7 @@ const SIG_EXAMPLES = [
 			dose: 1,
 			unit: 'tablet',
 			frequency: { type: 'as_needed', maxPerDay: 6 },
+			doseRange: { min: 1, max: 2 },
 			specialInstructions: ['for pain', 'variable dose 1-2 tablets', 'every 4-6 hours'],
 			confidence: 0.7,
 			reasoning:
@@ -155,6 +164,7 @@ export interface NDCSelectionInput {
 	quantityNeeded: number;
 	unit: string;
 	daysSupply: number;
+	parsedSIG: ParsedSIG;
 	prescriptionContext?: string;
 }
 
@@ -164,6 +174,7 @@ export interface NDCSelectionInput {
 export function buildNDCSelectionPrompt(
 	input: NDCSelectionInput
 ): Array<{ role: 'system' | 'user'; content: string }> {
+	const sigSummary = summarizeSIG(input.parsedSIG, input.daysSupply);
 	const ndcSummary = input.availableNDCs
 		.map(
 			(ndc) =>
@@ -180,9 +191,12 @@ export function buildNDCSelectionPrompt(
 			role: 'user',
 			content: `Select optimal package(s) for this prescription:
 
-Quantity Needed: ${input.quantityNeeded} ${input.unit}
-Days Supply: ${input.daysSupply}
+	Quantity Needed: ${input.quantityNeeded} ${input.unit}
+	Days Supply: ${input.daysSupply}
 ${input.prescriptionContext ? `Context: ${input.prescriptionContext}` : ''}
+
+Prescription Details:
+${sigSummary}
 
 Available NDC Packages:
 ${ndcSummary}
@@ -190,6 +204,58 @@ ${ndcSummary}
 Return the JSON output with selected packages, warnings, and reasoning.`
 		}
 	];
+}
+
+/**
+ * Build human-readable summary of parsed SIG for AI context
+ */
+function summarizeSIG(parsedSIG: ParsedSIG, daysSupply: number): string {
+	const parts: string[] = [];
+	parts.push(
+		`Dose: ${parsedSIG.dose} ${parsedSIG.unit}${parsedSIG.dose !== 1 ? 's' : ''}`
+	);
+
+	if (parsedSIG.doseRange) {
+		parts.push(
+			`Dose Range: ${parsedSIG.doseRange.min}-${parsedSIG.doseRange.max} ${parsedSIG.unit}s`
+		);
+	}
+
+	parts.push(`Frequency: ${summarizeFrequency(parsedSIG.frequency)}`);
+	parts.push(`Intended Duration: ${daysSupply} days`);
+
+	if (parsedSIG.route) {
+		parts.push(`Route: ${parsedSIG.route}`);
+	}
+
+	if (parsedSIG.doseSchedule?.length) {
+		const schedule = parsedSIG.doseSchedule
+			.map((entry) => {
+				const occurrences = entry.occurrencesPerDay ?? 1;
+				return `${entry.dose} ${parsedSIG.unit}${entry.dose !== 1 ? 's' : ''} ${entry.timing} (${occurrences}x/day)`;
+			})
+			.join('; ');
+		parts.push(`Dose Schedule: ${schedule}`);
+	}
+
+	if (parsedSIG.specialInstructions?.length) {
+		parts.push(`Special Instructions: ${parsedSIG.specialInstructions.join(', ')}`);
+	}
+
+	return parts.join('\n');
+}
+
+function summarizeFrequency(frequency: ParsedSIG['frequency']): string {
+	switch (frequency.type) {
+		case 'times_per_day':
+			return `${frequency.value}x per day`;
+		case 'times_per_period':
+			return `${frequency.value}x per ${frequency.period}`;
+		case 'specific_times':
+			return `at ${frequency.times.join(', ')}`;
+		case 'as_needed':
+			return frequency.maxPerDay ? `as needed (max ${frequency.maxPerDay}/day)` : 'as needed (max unknown)';
+	}
 }
 
 /**

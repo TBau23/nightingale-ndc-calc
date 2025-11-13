@@ -5,7 +5,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestEvent } from '@sveltejs/kit';
 import { calculatePrescription } from '$lib/services/calculator';
-import { PrescriptionInputSchema } from '$lib/types';
+import { adviseOnError } from '$lib/services/ai';
+import { PrescriptionInputSchema, type ErrorAdvice } from '$lib/types';
 
 /**
  * Calculate prescription endpoint
@@ -57,6 +58,21 @@ export async function POST({ request }: RequestEvent) {
 			// Map error to HTTP status
 			const statusCode = result.error.statusCode || 500;
 
+			let advice: ErrorAdvice | undefined;
+			try {
+				const adviceResult = await adviseOnError(result.error, {
+					originalInput: validation.data,
+					partialData: result.context
+				});
+				if (adviceResult.success) {
+					advice = adviceResult.data;
+				} else {
+					console.warn('[API] Advice generation failed:', adviceResult.error.message);
+				}
+			} catch (adviceError) {
+				console.warn('[API] Advice generation threw error:', adviceError);
+			}
+
 			console.error('[API] Calculate error:', {
 				drugName: validation.data.drugName,
 				error: result.error.code,
@@ -69,7 +85,8 @@ export async function POST({ request }: RequestEvent) {
 					error: {
 						code: result.error.code,
 						message: result.error.message,
-						statusCode
+						statusCode,
+						advice
 					},
 					timestamp: new Date().toISOString()
 				},

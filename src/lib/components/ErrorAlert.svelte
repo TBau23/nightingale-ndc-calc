@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { XCircle, RefreshCw } from 'lucide-svelte';
+	import type { ErrorAdvice } from '$lib/types';
 
 	interface Props {
 		error: {
 			code: string;
 			message: string;
 			statusCode: number;
+			advice?: ErrorAdvice;
 		};
 		onRetry?: () => void;
 	}
@@ -21,6 +23,22 @@
 		<div class="flex-1">
 			<h3 class="text-sm font-semibold text-red-900">Error: {error.code}</h3>
 			<p class="mt-1 text-sm text-red-800">{error.message}</p>
+
+			{#if error.advice}
+				<div class="mt-3 space-y-2 text-sm text-gray-800">
+					{#if error.advice.explanation}
+						<p class="font-medium text-gray-900">{error.advice.explanation}</p>
+					{/if}
+					{#if error.advice.suggestions?.length}
+						<ul class="list-disc space-y-1 pl-5">
+							{#each error.advice.suggestions as suggestion}
+								<li>{suggestion}</li>
+							{/each}
+						</ul>
+					{/if}
+				</div>
+			{/if}
+
 			{#if onRetry}
 				<button
 					type="button"

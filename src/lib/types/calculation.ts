@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { MEDICATION_UNITS, type MedicationUnit } from './prescription.js';
 import { NDCPackageSchema, type NDCPackage } from './ndc.js';
 import { ParsedSIGSchema, type ParsedSIG } from './prescription.js';
+import type { NightingaleError } from './errors.js';
 
 /**
  * Warning severity levels
@@ -23,7 +24,8 @@ export const WARNING_TYPES = [
 	'underfill',
 	'missing_package_size',
 	'ambiguous_sig',
-	'low_confidence_parse'
+	'low_confidence_parse',
+	'dose_range_assumption'
 ] as const;
 
 export type WarningType = (typeof WARNING_TYPES)[number];
@@ -132,3 +134,28 @@ export const CalculationResultSchema = z.object({
 	rxcui: z.string().optional(),
 	availableNDCs: z.array(NDCPackageSchema).optional()
 });
+
+/**
+ * Partial data collected during calculation (useful for error advice)
+ */
+export interface CalculationContext {
+	parsedSIG?: ParsedSIG;
+	rxcui?: string;
+	quantityNeeded?: number;
+	doseRangeInferred?: boolean;
+}
+
+/**
+ * Calculation outcome including optional context on failure
+ */
+export type CalculationOutcome =
+	| {
+			success: true;
+			data: CalculationResult;
+			context?: undefined;
+	  }
+	| {
+			success: false;
+			error: NightingaleError;
+			context?: CalculationContext;
+	  };

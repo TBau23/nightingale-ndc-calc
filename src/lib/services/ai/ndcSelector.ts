@@ -5,7 +5,14 @@
 import { chatCompletion } from './openai.js';
 import { buildNDCSelectionPrompt, type NDCSelectionInput } from './prompts.js';
 import { WarningSchema, AIServiceError } from '$lib/types';
-import type { NDCPackage, Warning, Result } from '$lib/types';
+import type {
+	NDCPackage,
+	Warning,
+	Result,
+	ParsedSIG,
+	MedicationUnit,
+	DosageForm
+} from '$lib/types';
 import { ok, err } from '$lib/types';
 import { z } from 'zod';
 
@@ -126,9 +133,51 @@ export async function selectOptimalNDCs(
 		return err(new AIServiceError('NDC Selector', 'AI did not select any packages'));
 	}
 
+	const mismatchWarnings = detectDosageFormMismatches(selectedPackages, input.parsedSIG);
+
 	return ok({
 		selectedPackages,
 		reasoning: aiSelection.overallReasoning,
-		warnings: aiSelection.warnings
+		warnings: [...aiSelection.warnings, ...mismatchWarnings]
 	});
+}
+
+function detectDosageFormMismatches(
+	selections: Array<{ package: NDCPackage }>,
+	parsedSIG: ParsedSIG
+): Warning[] {
+	const expectedForms = mapUnitToDosageForms(parsedSIG.unit);
+
+	if (expectedForms.length === 0) {
+		return [];
+	}
+
+	return selections
+		.filter((selection) => !expectedForms.includes(selection.package.dosageForm))
+		.map((selection) => ({
+			type: 'dosage_form_mismatch',
+			severity: 'warning',
+			message: `Package ${selection.package.ndc} is ${selection.package.dosageForm}, which does not match expected form for ${parsedSIG.unit}.`,
+			suggestion: 'Verify dosage form or choose a package aligned with the SIG.',
+			relatedNDC: selection.package.ndc
+		}));
+}
+
+const UNIT_FORM_MAP: Partial<Record<MedicationUnit, DosageForm[]>> = {
+	tablet: ['TABLET'],
+	capsule: ['CAPSULE'],
+	mL: ['SOLUTION', 'SUSPENSION'],
+	unit: ['INJECTION'],
+	mg: ['TABLET', 'CAPSULE'],
+	g: ['CREAM', 'OINTMENT', 'GEL'],
+	patch: ['PATCH'],
+	spray: ['SPRAY', 'INHALER'],
+	puff: ['INHALER', 'SPRAY'],
+	drop: ['DROPS', 'SOLUTION'],
+	suppository: ['SUPPOSITORY'],
+	application: ['CREAM', 'OINTMENT', 'GEL', 'PATCH']
+};
+
+function mapUnitToDosageForms(unit: MedicationUnit): DosageForm[] {
+	return UNIT_FORM_MAP[unit] || [];
 }

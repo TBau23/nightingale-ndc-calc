@@ -4,6 +4,8 @@
 
 import type { ParsedSIG } from '$lib/types';
 
+const DEFAULT_PRN_MAX_PER_DAY = 4;
+
 /**
  * Convert frequency period to times per day
  *
@@ -47,37 +49,58 @@ export function calculateTotalQuantity(sig: ParsedSIG, daysSupply: number): numb
 	// Use duration from SIG if specified and less than daysSupply
 	const effectiveDays = sig.duration && sig.duration < daysSupply ? sig.duration : daysSupply;
 
+	const scheduledQuantity = calculateFromDoseSchedule(sig, effectiveDays);
+	if (scheduledQuantity !== null) {
+		return Math.ceil(scheduledQuantity);
+	}
+
+	const doseToUse = sig.doseRange?.max ?? sig.dose;
 	let totalQuantity = 0;
 
 	switch (sig.frequency.type) {
-		case 'times_per_day':
-			// dose × times_per_day × days
-			totalQuantity = sig.dose * sig.frequency.value * effectiveDays;
+		case 'times_per_day': {
+			totalQuantity = doseToUse * sig.frequency.value * effectiveDays;
 			break;
+		}
 
-		case 'times_per_period':
-			// Convert to times per day, then calculate
+		case 'times_per_period': {
 			const timesPerDay = convertToTimesPerDay(sig.frequency.value, sig.frequency.period);
-			totalQuantity = sig.dose * timesPerDay * effectiveDays;
+			totalQuantity = doseToUse * timesPerDay * effectiveDays;
 			break;
+		}
 
-		case 'specific_times':
-			// dose × number of times × days
-			totalQuantity = sig.dose * sig.frequency.times.length * effectiveDays;
+		case 'specific_times': {
+			totalQuantity = doseToUse * sig.frequency.times.length * effectiveDays;
 			break;
+		}
 
-		case 'as_needed':
-			// Use maxPerDay if specified, otherwise use conservative estimate
-			const maxPerDay = sig.frequency.maxPerDay || 4; // Conservative default
-			totalQuantity = sig.dose * maxPerDay * effectiveDays;
+		case 'as_needed': {
+			const maxPerDay = sig.frequency.maxPerDay || DEFAULT_PRN_MAX_PER_DAY;
+			totalQuantity = doseToUse * maxPerDay * effectiveDays;
 			break;
+		}
 
-		default:
-			// Exhaustive check
+		default: {
 			const _exhaustive: never = sig.frequency;
-			return 0;
+			return _exhaustive;
+		}
 	}
 
-	// Round up to nearest whole number
 	return Math.ceil(totalQuantity);
+}
+
+/**
+ * Calculate quantity when detailed dose schedule is provided
+ */
+function calculateFromDoseSchedule(sig: ParsedSIG, days: number): number | null {
+	if (!sig.doseSchedule || sig.doseSchedule.length === 0) {
+		return null;
+	}
+
+	const dailyTotal = sig.doseSchedule.reduce((sum, entry) => {
+		const occurrences = entry.occurrencesPerDay && entry.occurrencesPerDay > 0 ? entry.occurrencesPerDay : 1;
+		return sum + entry.dose * occurrences;
+	}, 0);
+
+	return dailyTotal * days;
 }

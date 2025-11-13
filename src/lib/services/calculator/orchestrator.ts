@@ -4,7 +4,7 @@
 
 import { calculateTotalQuantity } from './quantityCalc.js';
 import { parseSIG, selectOptimalNDCs } from '$lib/services/ai';
-import { normalizeToRxCUI, searchNDCsByDrug } from '$lib/services/external';
+import { normalizeToRxCUI, searchNDCsByDrug, extractBaseDrugName } from '$lib/services/external';
 import {
 	PrescriptionInputSchema,
 	ValidationError,
@@ -157,6 +157,35 @@ function normalizeDrugNameForMatch(name: string): string {
 
 const MULTI_INGREDIENT_PATTERN = /\b(and|with)\b|\/|,/i;
 
+/**
+ * Normalize strength for comparison (handles "500mg" vs "500 mg" vs "500MG")
+ */
+function normalizeStrength(strength: string): string {
+	return strength
+		.toLowerCase()
+		.replace(/\s+/g, '') // Remove spaces
+		.replace(/(\d+(?:\.\d+)?)(mg|mcg|g|ml|units?|iu)/i, '$1$2'); // Normalize format
+}
+
+/**
+ * Check if two strengths match (with normalization)
+ */
+function strengthsMatch(requestedStrength: string, packageStrength: string): boolean {
+	const normalized1 = normalizeStrength(requestedStrength);
+	const normalized2 = normalizeStrength(packageStrength);
+	return normalized1 === normalized2;
+}
+
+/**
+ * Filter NDCs by matching strength
+ */
+function filterNDCsByStrength(ndcs: NDCPackage[], requestedStrength: string): NDCPackage[] {
+	return ndcs.filter((pkg) => {
+		if (!pkg.strength) return false;
+		return strengthsMatch(requestedStrength, pkg.strength);
+	});
+}
+
 function filterNDCsByDrugName(ndcs: NDCPackage[], normalizedDrugName: string): NDCPackage[] {
 	if (!normalizedDrugName) {
 		return ndcs;
@@ -220,6 +249,9 @@ export async function calculatePrescription(
 		error,
 		context: Object.keys(context).length > 0 ? context : undefined
 	});
+
+	// Extract strength from drug name (e.g., "Metformin 500mg" → "500mg")
+	const { baseName: extractedBaseName, strength: requestedStrength } = extractBaseDrugName(validInput.drugName);
 
 	// Step 2: Parse SIG (AI)
 	const sigResult = await parseSIG(validInput.sig, validInput.daysSupply);

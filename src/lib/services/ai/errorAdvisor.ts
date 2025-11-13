@@ -4,8 +4,7 @@
 
 import { chatCompletion } from './openai.js';
 import { buildErrorAdvicePrompt, type ErrorAdviceInput } from './prompts.js';
-import { AIServiceError, type NightingaleError } from '$lib/types';
-import type { Result } from '$lib/types';
+import { AIServiceError, type NightingaleError, type ErrorAdvice, type Result } from '$lib/types';
 import { ok, err } from '$lib/types';
 import { z } from 'zod';
 
@@ -21,11 +20,11 @@ const AdviceSchema = z.object({
 /**
  * Advice output
  */
-export interface Advice {
-	explanation: string;
-	suggestions: string[];
-	alternatives?: any;
-}
+/**
+ * Backwards-compatible alias (deprecated)
+ * @deprecated use ErrorAdvice from $lib/types instead
+ */
+export type Advice = ErrorAdvice;
 
 /**
  * Get helpful advice for an error that occurred
@@ -52,7 +51,7 @@ export interface Advice {
 export async function adviseOnError(
 	error: NightingaleError,
 	context: Omit<ErrorAdviceInput, 'errorType' | 'errorMessage'>
-): Promise<Result<Advice, AIServiceError>> {
+): Promise<Result<ErrorAdvice, AIServiceError>> {
 	// Build error input
 	const errorInput: ErrorAdviceInput = {
 		errorType: error.code,
