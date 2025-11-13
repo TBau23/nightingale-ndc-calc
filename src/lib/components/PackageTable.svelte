@@ -9,9 +9,13 @@
 
 	let { packages, unit }: Props = $props();
 
+	function formatNDCForDisplay(ndc: string): string {
+		if (ndc.length !== 11) return ndc;
+		return `${ndc.slice(0, 5)}-${ndc.slice(5, 9)}-${ndc.slice(9)}`;
+	}
+
 	function getNDCVerificationUrl(ndc: string): string {
-		// Use ndclist.com for NDC verification
-		return `https://ndclist.com/ndc/${ndc}`;
+		return `https://ndclist.com/ndc/${formatNDCForDisplay(ndc)}`;
 	}
 </script>
 
@@ -65,18 +69,17 @@
 		</thead>
 		<tbody class="divide-y divide-gray-200 bg-white">
 			{#each packages as pkg}
+				{@const formattedNDC = formatNDCForDisplay(pkg.package.ndc)}
 				<tr class="hover:bg-gray-50 transition-colors">
 					<!-- NDC (clickable link) -->
-					<td
-						class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-mono font-medium sm:pl-6"
-					>
+					<td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-mono font-medium sm:pl-6">
 						<a
 							href={getNDCVerificationUrl(pkg.package.ndc)}
 							target="_blank"
 							rel="noopener noreferrer"
 							class="text-primary-600 hover:text-primary-800 hover:underline inline-flex items-center gap-1"
 						>
-							{pkg.package.ndc}
+							{formattedNDC}
 							<ExternalLink class="w-3 h-3" />
 						</a>
 					</td>

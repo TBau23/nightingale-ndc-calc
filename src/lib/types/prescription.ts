@@ -105,6 +105,21 @@ export interface ParsedSIG {
 	/** Frequency pattern */
 	frequency: FrequencyPattern;
 
+	/** Optional dose range when prescription specifies variability (e.g., "1-2 tablets") */
+	doseRange?: {
+		min: number;
+		max: number;
+	} | null;
+
+	/**
+	 * Detailed schedule entries for complex regimens (e.g., "10 units before meals, 15 units at bedtime")
+	 */
+	doseSchedule?: Array<{
+		timing: string;
+		dose: number;
+		occurrencesPerDay?: number;
+	}> | null;
+
 	/** Duration in days (if specified in SIG) */
 	duration?: number;
 
@@ -150,10 +165,27 @@ const FrequencyPatternSchema = z.discriminatedUnion('type', [
 /**
  * Zod schema for ParsedSIG
  */
+const DoseRangeSchema = z
+	.object({
+		min: z.number().positive(),
+		max: z.number().positive()
+	})
+	.refine((val) => val.max >= val.min, {
+		message: 'max must be greater than or equal to min'
+	});
+
+const DoseScheduleEntrySchema = z.object({
+	timing: z.string(),
+	dose: z.number().positive(),
+	occurrencesPerDay: z.number().positive().optional()
+});
+
 export const ParsedSIGSchema = z.object({
 	dose: z.number().positive(),
 	unit: z.enum(MEDICATION_UNITS),
 	frequency: FrequencyPatternSchema,
+	doseRange: DoseRangeSchema.nullish(),
+	doseSchedule: z.array(DoseScheduleEntrySchema).nullish(),
 	duration: z.number().positive().int().optional(),
 	route: z.enum(ROUTES).optional(),
 	specialInstructions: z.array(z.string()).optional(),

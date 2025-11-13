@@ -14,12 +14,14 @@ import {
 import type {
 	PrescriptionInput,
 	CalculationResult,
-	Result,
 	NightingaleError,
 	Warning,
-	ParsedSIG
+	ParsedSIG,
+	CalculationOutcome,
+	CalculationContext,
+	MedicationUnit,
+	NDCPackage
 } from '$lib/types';
-import { ok, err } from '$lib/types';
 
 /**
  * Collect warnings from various sources
@@ -36,7 +38,8 @@ function collectWarnings(
 	aiWarnings: Warning[],
 	fillDifference: number,
 	quantityNeeded: number,
-	unit: string
+	unit: string,
+	options?: { doseRangeInferred?: boolean }
 ): Warning[] {
 	const warnings: Warning[] = [];
 
@@ -57,6 +60,19 @@ function collectWarnings(
 			severity: 'info',
 			message: 'PRN dosing without maximum - used conservative estimate of 4 times per day',
 			suggestion: 'Verify quantity with prescriber if needed'
+		});
+	}
+
+	// Dose range assumption warning
+	if (sig.doseRange) {
+		const inferredNote = options?.doseRangeInferred
+			? ' (range inferred from SIG text)'
+			: '';
+		warnings.push({
+			type: 'dose_range_assumption',
+			severity: 'info',
+			message: `Prescription specifies a dose range (${sig.doseRange.min}-${sig.doseRange.max} ${sig.unit}); used maximum for quantity${inferredNote}.`,
+			suggestion: 'Confirm whether dispensing the maximum dose for the full duration is appropriate'
 		});
 	}
 
@@ -87,6 +103,82 @@ function collectWarnings(
 	return warnings;
 }
 
+function inferDoseRangeFromText(sigText: string, unit: MedicationUnit): { min: number; max: number } | null {
+	const unitPattern = unit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	const regex = new RegExp(
+		`(\\d+(?:\\.\\d+)?)\\s*-\\s*(\\d+(?:\\.\\d+)?)\\s*${unitPattern}s?`,
+		'i'
+	);
+
+	const match = sigText.match(regex);
+	if (!match) {
+		return null;
+	}
+
+	const min = parseFloat(match[1]);
+	const max = parseFloat(match[2]);
+
+	if (Number.isNaN(min) || Number.isNaN(max) || max < min) {
+		return null;
+	}
+
+	return { min, max };
+}
+
+function enhanceParsedSIG(parsedSIG: ParsedSIG, originalSIG: string): {
+	sig: ParsedSIG;
+	doseRangeInferred: boolean;
+} {
+	let updatedSIG = parsedSIG;
+	let doseRangeInferred = false;
+
+	if (!parsedSIG.doseRange) {
+		const inferredRange = inferDoseRangeFromText(originalSIG, parsedSIG.unit);
+		if (inferredRange) {
+			updatedSIG = {
+				...updatedSIG,
+				doseRange: inferredRange
+			};
+			doseRangeInferred = true;
+		}
+	}
+
+	return { sig: updatedSIG, doseRangeInferred };
+}
+
+function normalizeDrugNameForMatch(name: string): string {
+	return name
+		.toLowerCase()
+		.replace(/\b\d+(\.\d+)?\s*(mg|mcg|g|ml|units?|iu)\b/g, '')
+		.replace(/[^a-z\s]/g, ' ')
+		.replace(/\s+/g, ' ')
+		.trim();
+}
+
+const MULTI_INGREDIENT_PATTERN = /\b(and|with)\b|\/|,/i;
+
+function filterNDCsByDrugName(ndcs: NDCPackage[], normalizedDrugName: string): NDCPackage[] {
+	if (!normalizedDrugName) {
+		return ndcs;
+	}
+
+	return ndcs.filter((pkg) => {
+		const genericName = pkg.genericName ? normalizeDrugNameForMatch(pkg.genericName) : '';
+		const brandName = pkg.brandName ? normalizeDrugNameForMatch(pkg.brandName) : '';
+		const isMultiIngredient = pkg.genericName ? MULTI_INGREDIENT_PATTERN.test(pkg.genericName) : false;
+
+		if (genericName && genericName.includes(normalizedDrugName)) {
+			return !isMultiIngredient;
+		}
+
+		if (brandName && brandName.includes(normalizedDrugName)) {
+			return true;
+		}
+
+		return false;
+	});
+}
+
 /**
  * Calculate prescription - main orchestration function
  *
@@ -109,49 +201,77 @@ function collectWarnings(
  */
 export async function calculatePrescription(
 	input: PrescriptionInput
-): Promise<Result<CalculationResult, NightingaleError>> {
+): Promise<CalculationOutcome> {
 	// Step 1: Validate Input
 	const validation = PrescriptionInputSchema.safeParse(input);
 	if (!validation.success) {
 		const firstError = validation.error.errors[0];
-		return err(new ValidationError(firstError.path.join('.'), firstError.message));
+		return {
+			success: false,
+			error: new ValidationError(firstError.path.join('.'), firstError.message)
+		};
 	}
 
 	const validInput = validation.data;
+	const context: CalculationContext = {};
+
+	const failure = (error: NightingaleError): CalculationOutcome => ({
+		success: false,
+		error,
+		context: Object.keys(context).length > 0 ? context : undefined
+	});
 
 	// Step 2: Parse SIG (AI)
 	const sigResult = await parseSIG(validInput.sig, validInput.daysSupply);
 	if (!sigResult.success) {
-		return err(sigResult.error);
+		return { success: false, error: sigResult.error };
 	}
-	const parsedSIG = sigResult.data;
+	const { sig: parsedSIG, doseRangeInferred } = enhanceParsedSIG(sigResult.data, validInput.sig);
+	context.parsedSIG = parsedSIG;
+	if (doseRangeInferred) {
+		context.doseRangeInferred = true;
+	}
 
 	// Step 3: Normalize Drug Name to RxCUI (optional - for reference)
 	let rxcui: string | undefined;
-	if (!validInput.ndc) {
-		const rxcuiResult = await normalizeToRxCUI(validInput.drugName);
-		if (rxcuiResult.success) {
-			rxcui = rxcuiResult.data.rxcui;
-		}
-		// Don't fail if RxCUI not found - continue with drug name
+	let drugNameForSearch = validInput.drugName;
+	const rxcuiResult = await normalizeToRxCUI(validInput.drugName);
+	if (rxcuiResult.success) {
+		rxcui = rxcuiResult.data.rxcui;
+		context.rxcui = rxcui;
+		drugNameForSearch = rxcuiResult.data.name || validInput.drugName;
 	}
+	// Don't fail if RxCUI not found - continue with original drug name
 
 	// Step 4: Get Available NDCs
-	const ndcsResult = await searchNDCsByDrug(validInput.drugName);
+	let ndcsResult = await searchNDCsByDrug(drugNameForSearch);
+	if (!ndcsResult.success && drugNameForSearch !== validInput.drugName) {
+		ndcsResult = await searchNDCsByDrug(validInput.drugName);
+	}
+
 	if (!ndcsResult.success) {
-		return err(ndcsResult.error);
+		return failure(ndcsResult.error);
 	}
 
 	// Filter to active only
 	const activeNDCs = ndcsResult.data.filter((ndc) => ndc.status === 'active');
 	if (activeNDCs.length === 0) {
-		return err(new NDCNotFoundError(`No active NDCs found for ${validInput.drugName}`));
+		return failure(new NDCNotFoundError(`No active NDCs found for ${validInput.drugName}`));
 	}
+
+	const requestedDrugNameForMatch = normalizeDrugNameForMatch(
+		rxcuiResult.success ? rxcuiResult.data.name : validInput.drugName
+	);
+
+	const ingredientMatchedNDCs = filterNDCsByDrugName(activeNDCs, requestedDrugNameForMatch);
+	const candidateNDCs = ingredientMatchedNDCs.length > 0 ? ingredientMatchedNDCs : activeNDCs;
 
 	// Step 5: Calculate Total Quantity Needed
 	const quantityNeeded = calculateTotalQuantity(parsedSIG, validInput.daysSupply);
+	context.quantityNeeded = quantityNeeded;
+
 	if (quantityNeeded <= 0) {
-		return err(
+		return failure(
 			new InvalidSIGError(
 				validInput.sig,
 				'Cannot calculate quantity from parsed SIG - result is zero or negative'
@@ -161,15 +281,16 @@ export async function calculatePrescription(
 
 	// Step 6: Select Optimal Packages (AI)
 	const selectionResult = await selectOptimalNDCs({
-		availableNDCs: activeNDCs,
+		availableNDCs: candidateNDCs,
 		quantityNeeded,
 		unit: parsedSIG.unit,
 		daysSupply: validInput.daysSupply,
+		parsedSIG,
 		prescriptionContext: `${validInput.drugName} - ${validInput.sig}`
 	});
 
 	if (!selectionResult.success) {
-		return err(selectionResult.error);
+		return failure(selectionResult.error);
 	}
 
 	// Step 7: Build Complete Result
@@ -185,7 +306,8 @@ export async function calculatePrescription(
 		selectionResult.data.warnings,
 		fillDifference,
 		quantityNeeded,
-		parsedSIG.unit
+		parsedSIG.unit,
+		{ doseRangeInferred }
 	);
 
 	const result: CalculationResult = {
@@ -197,9 +319,12 @@ export async function calculatePrescription(
 		fillDifference,
 		reasoning: selectionResult.data.reasoning,
 		warnings,
-		rxcui,
-		availableNDCs: activeNDCs
-	};
+			rxcui,
+			availableNDCs: candidateNDCs
+		};
 
-	return ok(result);
+	return {
+		success: true,
+		data: result
+	};
 }

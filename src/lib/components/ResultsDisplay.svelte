@@ -13,14 +13,26 @@
 
 	let copied = $state<boolean>(false);
 
-	function getFrequencyDisplay(frequency: CalculationResult['parsedSIG']['frequency']): string {
+	function getFrequencyDisplay(parsedSIG: CalculationResult['parsedSIG']): string {
+		const frequency = parsedSIG.frequency;
+		const hasPRN =
+			frequency.type === 'as_needed' ||
+			parsedSIG.specialInstructions?.some((instruction) => instruction.toLowerCase().includes('as needed') || instruction.toLowerCase().includes('prn'));
+		const prnSuffix = hasPRN ? ' as needed' : '';
+
 		switch (frequency.type) {
 			case 'times_per_day':
-				return `${frequency.value}x daily`;
+				return `${frequency.value}x daily${prnSuffix}`;
 			case 'times_per_period':
-				return `${frequency.value}x per ${frequency.period}`;
+				if (frequency.period === 'hour') {
+					return `every ${frequency.value} hour${frequency.value === 1 ? '' : 's'}${prnSuffix}`;
+				}
+				if (frequency.period === 'day') {
+					return `${frequency.value}x per day${prnSuffix}`;
+				}
+				return `${frequency.value}x per ${frequency.period}${prnSuffix}`;
 			case 'specific_times':
-				return `at ${frequency.times.join(', ')}`;
+				return `at ${frequency.times.join(', ')}${prnSuffix}`;
 			case 'as_needed':
 				return frequency.maxPerDay ? `as needed (max ${frequency.maxPerDay}/day)` : 'as needed';
 		}
@@ -86,7 +98,7 @@ Total Dispensed: ${result.totalUnitsDispensed} ${result.unit}
 			</div>
 			<div class="flex justify-between">
 				<dt class="text-gray-600">Frequency:</dt>
-				<dd class="font-medium text-gray-900">{getFrequencyDisplay(result.parsedSIG.frequency)}</dd>
+				<dd class="font-medium text-gray-900">{getFrequencyDisplay(result.parsedSIG)}</dd>
 			</div>
 			{#if result.parsedSIG.route}
 				<div class="flex justify-between">
