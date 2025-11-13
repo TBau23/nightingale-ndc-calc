@@ -7,7 +7,7 @@
 export { normalizeToRxCUI, getRxNormDetails } from './rxnorm.js';
 
 // FDA NDC Service
-export { searchNDCsByDrug, getNDCDetails, validateNDCFormat, normalizeNDC } from './fdaNdc.js';
+export { searchNDCsByDrug, getNDCDetails, validateNDCFormat, normalizeNDC, extractBaseDrugName } from './fdaNdc.js';
 
 // Cache utilities
 export { getRxNormCache, getFDACache, clearAllCaches, getCacheConfig } from './cache.js';

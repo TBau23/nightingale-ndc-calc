@@ -25,7 +25,8 @@ export const WARNING_TYPES = [
 	'missing_package_size',
 	'ambiguous_sig',
 	'low_confidence_parse',
-	'dose_range_assumption'
+	'dose_range_assumption',
+	'strength_mismatch'
 ] as const;
 
 export type WarningType = (typeof WARNING_TYPES)[number];

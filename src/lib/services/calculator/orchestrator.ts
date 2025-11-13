@@ -39,7 +39,7 @@ function collectWarnings(
 	fillDifference: number,
 	quantityNeeded: number,
 	unit: string,
-	options?: { doseRangeInferred?: boolean }
+	options?: { doseRangeInferred?: boolean; strengthMismatch?: { requested: string; selected: string } }
 ): Warning[] {
 	const warnings: Warning[] = [];
 
@@ -73,6 +73,16 @@ function collectWarnings(
 			severity: 'info',
 			message: `Prescription specifies a dose range (${sig.doseRange.min}-${sig.doseRange.max} ${sig.unit}); used maximum for quantity${inferredNote}.`,
 			suggestion: 'Confirm whether dispensing the maximum dose for the full duration is appropriate'
+		});
+	}
+
+	// Strength mismatch warning
+	if (options?.strengthMismatch) {
+		warnings.push({
+			type: 'strength_mismatch',
+			severity: 'error',
+			message: `Prescription requested ${options.strengthMismatch.requested} but selected package is ${options.strengthMismatch.selected}`,
+			suggestion: 'Verify the strength is correct or adjust the prescription to match available NDC packages'
 		});
 	}
 
@@ -295,8 +305,24 @@ export async function calculatePrescription(
 		rxcuiResult.success ? rxcuiResult.data.name : validInput.drugName
 	);
 
+	// Filter by drug name (to exclude multi-ingredient products)
 	const ingredientMatchedNDCs = filterNDCsByDrugName(activeNDCs, requestedDrugNameForMatch);
-	const candidateNDCs = ingredientMatchedNDCs.length > 0 ? ingredientMatchedNDCs : activeNDCs;
+	let candidateNDCs = ingredientMatchedNDCs.length > 0 ? ingredientMatchedNDCs : activeNDCs;
+
+	// Filter by strength if specified in drug name (e.g., "Metformin 500mg")
+	let strengthMatchedNDCs: NDCPackage[] = [];
+	if (requestedStrength) {
+		console.log('[Calculator] Filtering by requested strength:', requestedStrength);
+		strengthMatchedNDCs = filterNDCsByStrength(candidateNDCs, requestedStrength);
+
+		if (strengthMatchedNDCs.length > 0) {
+			console.log(`[Calculator] Found ${strengthMatchedNDCs.length} packages matching strength ${requestedStrength}`);
+			candidateNDCs = strengthMatchedNDCs;
+		} else {
+			console.warn(`[Calculator] No packages found matching strength ${requestedStrength}, using all available strengths`);
+			// Don't filter - let all strengths through with a warning
+		}
+	}
 
 	// Step 5: Calculate Total Quantity Needed
 	const quantityNeeded = calculateTotalQuantity(parsedSIG, validInput.daysSupply);
@@ -312,13 +338,17 @@ export async function calculatePrescription(
 	}
 
 	// Step 6: Select Optimal Packages (AI)
+	const prescriptionContext = requestedStrength
+		? `${validInput.drugName} (strength: ${requestedStrength}) - ${validInput.sig}`
+		: `${validInput.drugName} - ${validInput.sig}`;
+
 	const selectionResult = await selectOptimalNDCs({
 		availableNDCs: candidateNDCs,
 		quantityNeeded,
 		unit: parsedSIG.unit,
 		daysSupply: validInput.daysSupply,
 		parsedSIG,
-		prescriptionContext: `${validInput.drugName} - ${validInput.sig}`
+		prescriptionContext
 	});
 
 	if (!selectionResult.success) {
@@ -333,13 +363,26 @@ export async function calculatePrescription(
 
 	const fillDifference = totalUnitsDispensed - quantityNeeded;
 
+	// Check for strength mismatch
+	let strengthMismatch: { requested: string; selected: string } | undefined;
+	if (requestedStrength) {
+		// Check if any selected package has a different strength
+		const selectedStrength = selectionResult.data.selectedPackages[0]?.package.strength;
+		if (selectedStrength && !strengthsMatch(requestedStrength, selectedStrength)) {
+			strengthMismatch = {
+				requested: requestedStrength,
+				selected: selectedStrength
+			};
+		}
+	}
+
 	const warnings = collectWarnings(
 		parsedSIG,
 		selectionResult.data.warnings,
 		fillDifference,
 		quantityNeeded,
 		parsedSIG.unit,
-		{ doseRangeInferred }
+		{ doseRangeInferred, strengthMismatch }
 	);
 
 	const result: CalculationResult = {
