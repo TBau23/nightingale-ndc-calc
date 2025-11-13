@@ -51,10 +51,12 @@ export function calculateTotalQuantity(sig: ParsedSIG, daysSupply: number): numb
 
 	const scheduledQuantity = calculateFromDoseSchedule(sig, effectiveDays);
 	if (scheduledQuantity !== null) {
+		console.log('[Quantity Calc] Using doseSchedule calculation:', scheduledQuantity);
 		return Math.ceil(scheduledQuantity);
 	}
 
 	const doseToUse = sig.doseRange?.max ?? sig.dose;
+	console.log('[Quantity Calc] dose:', sig.dose, 'doseRange:', sig.doseRange, 'doseToUse:', doseToUse);
 	let totalQuantity = 0;
 
 	switch (sig.frequency.type) {
